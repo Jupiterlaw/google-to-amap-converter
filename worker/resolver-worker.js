@@ -76,6 +76,8 @@ export default {
 
     let found = extractFromText(u);
     let name = extractName(u);
+    const debug = url.searchParams.get("debug") === "1";
+    const dbg = { input: u };
 
     if (!found) {
       // Follow redirects server-side (no CORS limit), then dig into the page if needed
@@ -94,26 +96,61 @@ export default {
       const finalUrl = res.url || u;
       name = name || extractName(finalUrl);
       found = extractFromText(finalUrl);
+      let html = "";
       if (!found) {
-        const html = await res.text();
+        html = await res.text();
         found = extractFromText(html);
+      }
+      if (debug) {
+        dbg.fetchStatus = res.status;
+        dbg.finalUrl = finalUrl;
+        dbg.urlFound = extractFromText(finalUrl);
+        dbg.htmlLen = html.length;
+        dbg.htmlFound = found;
+        const ftid = new URL(finalUrl).searchParams.get("ftid") || "";
+        dbg.ftid = ftid;
+        dbg.qParam = new URL(finalUrl).searchParams.get("q");
+        if (html) {
+          const needle = ftid.split(":")[1] || "Moray";
+          const idx = html.indexOf(needle);
+          dbg.needle = needle;
+          dbg.needleIdx = idx;
+          dbg.aroundNeedle = idx >= 0 ? html.slice(Math.max(0, idx - 300), idx + 500) : null;
+          const plus = html.match(/[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}/g);
+          dbg.plusCodes = plus ? plus.slice(0, 5) : [];
+          const pairs = html.match(/\[null,null,-?\d{1,3}\.\d+,-?\d{1,3}\.\d+\]/g);
+          dbg.nullPairs = pairs ? pairs.slice(0, 5) : [];
+        }
       }
       if (!found) {
         // iOS App 分享連結常見形式：最終網址只有 ?q=<名稱+地址>&ftid=<地點ID>，成條網址冇座標。
         // 最後手段：用 q 入面嘅地址做地理編碼（OSM Nominatim，免 Key），攞返 WGS-84 座標。
         const q = new URL(finalUrl).searchParams.get("q");
         if (q) {
-          try {
-            const geo = await fetch(
-              "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q),
-              { headers: { "User-Agent": "google-to-amap-converter (personal tool)" } });
-            const arr = await geo.json();
-            if (arr && arr.length) {
-              found = { lat: +arr[0].lat, lon: +arr[0].lon, how: "address geocode (fallback)" };
-              if (!name) name = q.split(",")[0];
-            }
-          } catch (e) { /* fall through to error page */ }
+          // Try several query variants: full q, q without trailing CJK country word, address-only (drop place name)
+          const cleaned = q.replace(/(澳洲|澳大利亚|澳大利亞|紐西蘭|新西蘭)\s*$/u, "").trim();
+          const addrOnly = cleaned.split(",").slice(1).join(",").trim();
+          const variants = [q, cleaned, addrOnly].filter((v, i, a) => v && a.indexOf(v) === i);
+          dbg.geocodeVariants = variants;
+          dbg.geocodeResults = [];
+          for (const v of variants) {
+            try {
+              const geo = await fetch(
+                "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(v),
+                { headers: { "User-Agent": "google-to-amap-converter (personal tool)" } });
+              const arr = await geo.json();
+              dbg.geocodeResults.push({ v, n: arr ? arr.length : 0, first: arr && arr.length ? [arr[0].lat, arr[0].lon] : null });
+              if (arr && arr.length) {
+                found = { lat: +arr[0].lat, lon: +arr[0].lon, how: "address geocode (fallback)" };
+                if (!name) name = q.split(",")[0];
+                break;
+              }
+            } catch (e) { dbg.geocodeResults.push({ v, error: String(e) }); }
+          }
         }
+      }
+      if (debug) {
+        return new Response(JSON.stringify(dbg, null, 1), { headers: { "content-type": "application/json; charset=utf-8" } });
       }
       if (!found) return errorPage("條連結展開之後都搵唔到座標，地址地理編碼亦失敗。");
     }
