@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Maps → 高德地圖 座標轉換器</title>
+<style>
+  :root{--tiffany:#0abab5;--tiffany-dark:#078f8c;--ink:#1a2b2b;--muted:#5f7373;--bg:#f4fafa;--card:#fff;--line:#d9e8e8;--warn:#b45309;--warn-bg:#fef3c7}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang HK","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+  h1{font-size:22px;margin:8px 0 4px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  label{font-weight:600;font-size:14px;display:block;margin-bottom:6px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:15px;font-family:inherit}
+  textarea{min-height:74px;resize:vertical}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button{border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer;font-family:inherit}
+  .primary{background:var(--tiffany);color:#fff;font-weight:600}
+  .primary:active{background:var(--tiffany-dark)}
+  .ghost{background:#eef6f6;color:var(--ink)}
+  .small{font-size:13px;color:var(--muted)}
+  .warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 12px;font-size:14px;display:none;margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;width:34%}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;word-break:break-all}
+  .linkbox{display:flex;gap:8px;align-items:flex-start;margin:10px 0}
+  .linkbox a{flex:1;word-break:break-all;font-size:14px}
+  .copy{white-space:nowrap;padding:6px 12px;font-size:13px}
+  .seg{display:flex;gap:6px;margin-bottom:10px}
+  .seg button{background:#eef6f6;color:var(--ink)}
+  .seg button.on{background:var(--tiffany);color:#fff;font-weight:600}
+  #result{display:none}
+  .badge{display:inline-block;background:#e0f5f4;color:var(--tiffany-dark);border-radius:99px;padding:1px 10px;font-size:12.5px;font-weight:600}
+  footer{font-size:12.5px;color:var(--muted);margin-top:20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🗺️ Google Maps → 高德地圖</h1>
+  <p class="sub">貼上 Google Maps 連結（或直接貼座標），自動將 WGS-84 座標轉成高德用嘅 GCJ-02（火星座標），再生成高德標記／導航連結。唔靠地點名稱搜尋，直接用座標落釘，唔會出現「高德搵唔到同一個名」或者偏幾百米嘅問題。全部喺你部機本地運算，唔使 API Key，唔上傳任何資料。</p>
+
+  <div class="card">
+    <div class="seg" id="dirSeg">
+      <button class="on" data-dir="g2a">Google → 高德</button>
+      <button data-dir="a2g">高德 → Google（反向）</button>
+    </div>
+    <label for="inp" id="inpLabel">Google Maps 連結 / 座標</label>
+    <textarea id="inp" placeholder="例如：&#10;https://www.google.com/maps/place/…/@31.2304,121.4737,17z/data=…!3d31.228…!4d121.474…&#10;或者直接貼：31.230416, 121.473701"></textarea>
+    <div class="row">
+      <button class="primary" id="go">轉換並生成高德連結</button>
+      <button class="ghost" id="demo">試範例（上海外灘）</button>
+      <button class="ghost" id="clear">清除</button>
+    </div>
+    <div class="warn" id="warn"></div>
+    <p class="small" style="margin-top:10px">支援格式：Google 長連結（<span class="mono">/place/…</span>、<span class="mono">@lat,lon</span>、<span class="mono">?q=</span>、<span class="mono">query=</span>、<span class="mono">!3d…!4d…</span>）、純座標文字。短連結 <span class="mono">maps.app.goo.gl</span> 本身唔含座標，要先撳開變成長連結再貼入嚟。</p>
+  </div>
+
+  <div class="card" id="result">
+    <p style="margin:0 0 8px"><span class="badge" id="srcBadge"></span> <strong id="placeName"></strong></p>
+    <table>
+      <tr><th id="srcLabel">原座標（WGS-84）</th><td class="mono" id="srcCoord"></td></tr>
+      <tr><th id="dstLabel">轉換後（GCJ-02）</th><td class="mono" id="dstCoord"></td></tr>
+      <tr><th>偏移量</th><td id="offset"></td></tr>
+    </table>
+    <div id="links"></div>
+  </div>
+
+  <div class="card">
+    <label>點解會偏？</label>
+    <p class="small" style="margin:4px 0 0">Google Maps（國際版）用全球標準 WGS-84；中國內地依法例，所有內地地圖（高德、騰訊、百度）要用經非線性加密偏移嘅 GCJ-02，同一地點兩套座標可以差 100–700 米。工具會自動判斷：座標喺演算法嘅中國範圍以外（澳洲、歐美、日本等地），原座標直出，唔會亂轉；喺範圍內先做轉換。百度仲要再偏多一層（BD-09），工具亦附送百度連結，一次過搞掂。</p>
+  </div>
+
+  <footer>轉換演算法：GCJ-02 標準算法（同 GitHub wandergis/coordtransform、googollee/eviltransform 相同公式）。GCJ-02 → WGS-84 為近似逆轉換，誤差約 1–2 米，分享落釘足夠用。</footer>
+</div>
+
+<script>
+"use strict";
+/* ===== GCJ-02 conversion (wandergis/coordtransform algorithm) ===== */
+var PI = 3.1415926535897932384626, A = 6378245.0, EE = 0.00669342162296594323;
+function transformLat(x, y) {
+  var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+  ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+  return ret;
+}
+function transformLng(x, y) {
+  var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+  ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+  return ret;
+}
+function outOfChina(lng, lat) { return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271; }
+function wgs84ToGcj02(lng, lat) {
+  if (outOfChina(lng, lat)) return [lng, lat];
+  var dLat = transformLat(lng - 105.0, lat - 35.0), dLng = transformLng(lng - 105.0, lat - 35.0);
+  var radLat = lat / 180.0 * PI, magic = Math.sin(radLat);
+  magic = 1 - EE * magic * magic;
+  var sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI);
+  dLng = (dLng * 180.0) / (A / sqrtMagic * Math.cos(radLat) * PI);
+  return [lng + dLng, lat + dLat];
+}
+function gcj02ToWgs84(lng, lat) {
+  if (outOfChina(lng, lat)) return [lng, lat];
+  var dLat = transformLat(lng - 105.0, lat - 35.0), dLng = transformLng(lng - 105.0, lat - 35.0);
+  var radLat = lat / 180.0 * PI, magic = Math.sin(radLat);
+  magic = 1 - EE * magic * magic;
+  var sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI);
+  dLng = (dLng * 180.0) / (A / sqrtMagic * Math.cos(radLat) * PI);
+  return [lng * 2 - (lng + dLng), lat * 2 - (lat + dLat)];
+}
+function gcj02ToBd09(lng, lat) {
+  var z = Math.sqrt(lng * lng + lat * lat) + 0.00002 * Math.sin(lat * PI * 3000.0 / 180.0);
+  var theta = Math.atan2(lat, lng) + 0.000003 * Math.cos(lng * PI * 3000.0 / 180.0);
+  return [z * Math.cos(theta) + 0.0065, z * Math.sin(theta) + 0.006];
+}
+function haversineM(lat1, lon1, lat2, lon2) {
+  var R = 6371000, dLat = (lat2 - lat1) * PI / 180, dLon = (lon2 - lon1) * PI / 180;
+  var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * PI / 180) * Math.cos(lat2 * PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+/* ===== Link parsing ===== */
+function parseInput(raw, dir) {
+  var text = raw.trim();
+  var name = "", m;
+  // place name from Google /place/<name>/
+  m = text.match(/\/place\/([^\/@?]+)/);
+  if (m) { try { name = decodeURIComponent(m[1].replace(/\+/g, " ")); } catch (e) { name = m[1].replace(/\+/g, " "); } }
+  var nameParam = text.match(/[?&](?:name|query|q)=([^&]+)/);
+  // 1) exact pin: !3d<lat>!4d<lon>
+  m = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (m) return { lat: +m[1], lon: +m[2], name: name, how: "地點落釘座標（!3d/!4d，最準）" };
+  // 2) Amap style: position=<lon>,<lat> / to=<lon>,<lat>
+  m = text.match(/(?:position|to|location)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m && dir === "a2g") return { lat: +m[2], lon: +m[1], name: name, how: "高德連結 position 參數（經度,緯度）" };
+  // 3) query params carrying lat,lon
+  m = text.match(/[?&](?:query|q|destination|daddr|ll|center)=(-?\d+\.\d+)[,+\s]%2C?\s*(-?\d+\.\d+)/i) ||
+      text.match(/[?&](?:query|q|destination|daddr)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return { lat: +m[1], lon: +m[2], name: name, how: "連結 query 座標" };
+  // 4) viewport centre @<lat>,<lon>
+  m = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return { lat: +m[1], lon: +m[2], name: name, how: "地圖畫面中心座標（@）— 係大約位置，未必等於地點本身" };
+  // 5) bare "lat, lon" or "lon, lat" text: assume lat,lon (Google convention); if first value > 90 treat as lon,lat
+  m = text.match(/(-?\d{1,3}\.\d+)\s*[,，\s]\s*(-?\d{1,3}\.\d+)/);
+  if (m) {
+    var v1 = +m[1], v2 = +m[2];
+    if (Math.abs(v1) > 90 && Math.abs(v2) <= 90) return { lat: v2, lon: v1, name: name, how: "純座標（經度,緯度）" };
+    return { lat: v1, lon: v2, name: name, how: "純座標（緯度,經度）" };
+  }
+  if (!name && nameParam) { try { name = decodeURIComponent(nameParam[1].replace(/\+/g, " ")); } catch (e) {} }
+  return null;
+}
+
+/* ===== UI ===== */
+var dir = "g2a";
+var $ = function (id) { return document.getElementById(id); };
+document.querySelectorAll("#dirSeg button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    document.querySelectorAll("#dirSeg button").forEach(function (x) { x.classList.remove("on"); });
+    b.classList.add("on"); dir = b.dataset.dir;
+    $("inpLabel").textContent = dir === "g2a" ? "Google Maps 連結 / 座標" : "高德地圖連結 / GCJ-02 座標";
+    $("go").textContent = dir === "g2a" ? "轉換並生成高德連結" : "轉換並生成 Google 連結";
+  });
+});
+$("demo").addEventListener("click", function () {
+  $("inp").value = "https://www.google.com/maps/place/%E5%A4%96%E6%BB%A9/@31.2400,121.4840,17z/data=!3m1!4b1!4m6!3m5!1s0x35b27040b1f53c33:0x295129423c364a1!8m2!3d31.239692!4d121.490846";
+  convert();
+});
+$("clear").addEventListener("click", function () { $("inp").value = ""; $("result").style.display = "none"; $("warn").style.display = "none"; });
+$("go").addEventListener("click", convert);
+
+function copyBtn(text) {
+  var b = document.createElement("button");
+  b.className = "ghost copy"; b.textContent = "複製";
+  b.addEventListener("click", function () {
+    navigator.clipboard.writeText(text).then(function () { b.textContent = "✓ 已複製"; setTimeout(function () { b.textContent = "複製"; }, 1500); });
+  });
+  return b;
+}
+function linkRow(label, url) {
+  var div = document.createElement("div");
+  var lab = document.createElement("div"); lab.innerHTML = "<strong style='font-size:14px'>" + label + "</strong>";
+  var box = document.createElement("div"); box.className = "linkbox";
+  var a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener"; a.textContent = url;
+  box.appendChild(a); box.appendChild(copyBtn(url));
+  div.appendChild(lab); div.appendChild(box);
+  return div;
+}
+function showWarn(msg) { var w = $("warn"); w.textContent = msg; w.style.display = msg ? "block" : "none"; }
+
+function convert() {
+  var raw = $("inp").value;
+  showWarn("");
+  if (/maps\.app\.goo\.gl|goo\.gl\/maps/.test(raw)) {
+    showWarn("呢條係 Google 短連結，入面唔含座標（要經 Google 伺服器先解到，純本地工具解唔到）。請先撳開條連結，等佢變成長連結，再複製成個網址貼返入嚟。");
+    return;
+  }
+  var p = parseInput(raw, dir);
+  if (!p) { showWarn("讀唔到座標。請貼完整 Google Maps 長連結，或者直接貼「緯度, 經度」數字。"); return; }
+  var displayName = p.name || "落釘位置";
+  var enc = encodeURIComponent(displayName);
+  var links = $("links"); links.innerHTML = "";
+  var off, gcj, wgs;
+  if (dir === "g2a") {
+    wgs = [p.lon, p.lat];
+    gcj = wgs84ToGcj02(p.lon, p.lat);
+    off = haversineM(p.lat, p.lon, gcj[1], gcj[0]);
+    $("srcBadge").textContent = "來源：" + p.how;
+    $("srcLabel").textContent = "原座標 WGS-84（Google）";
+    $("dstLabel").textContent = "轉換後 GCJ-02（高德）";
+    $("srcCoord").textContent = "緯度 " + wgs[1].toFixed(6) + "，經度 " + wgs[0].toFixed(6);
+    $("dstCoord").textContent = "緯度 " + gcj[1].toFixed(6) + "，經度 " + gcj[0].toFixed(6);
+    links.appendChild(linkRow("📍 高德標記連結（分享俾人用呢條）",
+      "https://uri.amap.com/marker?position=" + gcj[0].toFixed(6) + "," + gcj[1].toFixed(6) + "&name=" + enc + "&coordinate=gaode&callnative=1"));
+    links.appendChild(linkRow("🧭 高德導航連結（直接開始導航）",
+      "https://uri.amap.com/navigation?to=" + gcj[0].toFixed(6) + "," + gcj[1].toFixed(6) + "," + enc + "&mode=car&coordinate=gaode&callnative=1"));
+    var bd = gcj02ToBd09(gcj[0], gcj[1]);
+    links.appendChild(linkRow("百度地圖連結（順便）",
+      "https://api.map.baidu.com/marker?location=" + bd[1].toFixed(6) + "," + bd[0].toFixed(6) + "&title=" + enc + "&content=" + enc + "&output=html"));
+  } else {
+    gcj = [p.lon, p.lat];
+    wgs = gcj02ToWgs84(p.lon, p.lat);
+    off = haversineM(p.lat, p.lon, wgs[1], wgs[0]);
+    $("srcBadge").textContent = "來源：" + p.how;
+    $("srcLabel").textContent = "原座標 GCJ-02（高德）";
+    $("dstLabel").textContent = "轉換後 WGS-84（Google）";
+    $("srcCoord").textContent = "緯度 " + gcj[1].toFixed(6) + "，經度 " + gcj[0].toFixed(6);
+    $("dstCoord").textContent = "緯度 " + wgs[1].toFixed(6) + "，經度 " + wgs[0].toFixed(6);
+    links.appendChild(linkRow("📍 Google Maps 連結",
+      "https://www.google.com/maps/search/?api=1&query=" + wgs[1].toFixed(6) + "," + wgs[0].toFixed(6)));
+  }
+  $("offset").textContent = off < 1 ? "0 米（唔喺中國偏移範圍內，座標直用）" : "約 " + Math.round(off) + " 米（即係唔轉換直接貼去高德會偏嘅距離）";
+  $("placeName").textContent = p.name ? p.name : "";
+  $("result").style.display = "block";
+}
+</script>
+</body>
+</html>
