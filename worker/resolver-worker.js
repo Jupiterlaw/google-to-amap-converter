@@ -67,12 +67,28 @@ function errorPage(msg) {
     { status: 422, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
+/* ===== domain allowlist (hardening): only resolve Google Maps links ===== */
+function hostAllowed(hostname) {
+  const h = (hostname || "").toLowerCase();
+  if (h === "maps.app.goo.gl" || h === "goo.gl") return true;
+  // Any Google domain incl. country ones: google.com, google.com.hk, google.co.uk,
+  // plus subdomains such as www.google.com / maps.google.com
+  return /(^|\.)google\.[a-z]{2,}(\.[a-z]{2})?$/.test(h);
+}
+function isAllowedUrl(str) {
+  try {
+    const p = new URL(str);
+    return (p.protocol === "https:" || p.protocol === "http:") && hostAllowed(p.hostname);
+  } catch (e) { return false; }
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     const u = url.searchParams.get("u");
     const mode = url.searchParams.get("mode") || "page";
     if (!u) return errorPage("缺少 u 參數（要解析嘅 Google 連結）。");
+    if (!isAllowedUrl(u)) return errorPage("只接受 Google Maps 連結（maps.app.goo.gl 或者 google.com/maps 嗰類），其他域名一律唔解析。");
 
     let found = extractFromText(u);
     let name = extractName(u);
@@ -80,20 +96,32 @@ export default {
     const dbg = { input: u };
 
     if (!found) {
-      // Follow redirects server-side (no CORS limit), then dig into the page if needed
-      let res;
+      // Follow redirects server-side (no CORS limit), checking every hop against
+      // the domain allowlist so the resolver cannot be used as a general proxy
+      let res, finalUrl = u;
       try {
-        res = await fetch(u, {
-          redirect: "follow",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-            "Accept-Language": "zh-Hant,zh;q=0.9,en;q=0.8",
-          },
-        });
+        let current = u, hops = 0;
+        while (true) {
+          res = await fetch(current, {
+            redirect: "manual",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+              "Accept-Language": "zh-Hant,zh;q=0.9,en;q=0.8",
+            },
+          });
+          finalUrl = current;
+          const loc = res.headers.get("location");
+          if ([301, 302, 303, 307, 308].includes(res.status) && loc && hops < 8) {
+            const next = new URL(loc, current).href;
+            if (!isAllowedUrl(next)) return errorPage("條連結跳咗去唔喺允許名單嘅域名，已停止解析。");
+            current = next; hops++;
+            continue;
+          }
+          break;
+        }
       } catch (e) {
         return errorPage("開唔到條連結：" + e.message);
       }
-      const finalUrl = res.url || u;
       // Google often 429-blocks datacenter fetchers and lands on a /sorry/ page;
       // the intended maps URL survives inside its "continue" parameter — recover it.
       let targetUrl = finalUrl;
