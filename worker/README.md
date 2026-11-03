@@ -7,6 +7,10 @@
 網頁分享款抽到精確落釘座標；iOS App 分享款（Nationwide Parking, 31 Moray St, Southbank）
 以地址地理編碼得到 -37.827609, 144.961194。
 
+安全加固（2026-11-03）：已加域名白名單 — 只接受 Google 域名（maps.app.goo.gl、goo.gl、
+*.google.* 各國域名），輸入同每一跳 redirect 都查，其他網址一律拒絕（回 422），
+避免畀人攞嚟做通用代理跳板；你條 iOS 連結加固後重測結果不變。
+
 ## 點解需要佢
 
 Google Maps App 分享出嚟嘅係 `maps.app.goo.gl` 短連結，條連結本身**冇經緯度**。
