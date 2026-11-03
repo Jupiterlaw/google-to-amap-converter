@@ -21,6 +21,7 @@
 2. 貼入工具，撳「轉換並生成高德連結」。
 3. 複製生成嘅高德標記連結（分享用）或導航連結（直接導航）。
 4. 亦支援反方向：高德 GCJ-02 → Google WGS-84；另附百度地圖（BD-09）連結。
+5. iPhone 捷徑／書籤支援：網址加參數即自動轉換 — `?lat=<緯度>&lon=<經度>&name=<名稱>` 或 `?q=<Google Maps 連結>`。
 
 ### 支援嘅輸入格式
 
@@ -70,6 +71,7 @@ MIT
 2. 粘贴到工具中，点击“转换并生成高德链接”。
 3. 复制生成的高德标记链接（用于分享）或导航链接（直接导航）。
 4. 也支持反方向：高德 GCJ-02 → Google WGS-84；另附百度地图（BD-09）链接。
+5. iPhone 快捷指令／书签支持：网址加参数即自动转换 — `?lat=<纬度>&lon=<经度>&name=<名称>` 或 `?q=<Google Maps 链接>`。
 
 ### 支持的输入格式
 
@@ -119,6 +121,7 @@ A single HTML file. Everything runs locally in your browser — no API key, no d
 2. Paste it into the tool and click "Convert".
 3. Copy the generated Amap marker link (for sharing) or navigation link (to start routing).
 4. The reverse direction is also supported: Amap GCJ-02 → Google WGS-84. A Baidu Maps (BD-09) link is included as a bonus.
+5. iOS Shortcut / bookmark support: append URL parameters to convert automatically — `?lat=<lat>&lon=<lon>&name=<name>`, or `?q=<Google Maps link>`.
 
 ### Supported input formats
 

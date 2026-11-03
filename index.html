@@ -176,6 +176,21 @@ $("demo").addEventListener("click", function () {
 $("clear").addEventListener("click", function () { $("inp").value = ""; $("result").style.display = "none"; $("warn").style.display = "none"; });
 $("go").addEventListener("click", convert);
 
+/* ===== Auto-input from URL (for iOS Shortcut / bookmarklet) =====
+   ?q=<Google Maps link or "lat, lon">  |  ?lat=<lat>&lon=<lon>&name=<name>  |  #<lat>,<lon> */
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var q = qs.get("q") || qs.get("input");
+  var lat = qs.get("lat"), lon = qs.get("lon");
+  presetName = qs.get("name") || "";
+  if (lat && lon) { $("inp").value = lat + ", " + lon; convert(); return; }
+  if (q) { $("inp").value = q; convert(); return; }
+  if (location.hash.length > 3) {
+    var h = decodeURIComponent(location.hash.slice(1));
+    if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(h)) { $("inp").value = h; convert(); }
+  }
+})();
+
 function copyBtn(text) {
   var b = document.createElement("button");
   b.className = "ghost copy"; b.textContent = "複製";
@@ -195,6 +210,7 @@ function linkRow(label, url) {
 }
 function showWarn(msg) { var w = $("warn"); w.textContent = msg; w.style.display = msg ? "block" : "none"; }
 
+var presetName = "";
 function convert() {
   var raw = $("inp").value;
   showWarn("");
@@ -204,6 +220,7 @@ function convert() {
   }
   var p = parseInput(raw, dir);
   if (!p) { showWarn("讀唔到座標。請貼完整 Google Maps 長連結，或者直接貼「緯度, 經度」數字。"); return; }
+  if (!p.name && presetName) p.name = presetName;
   var displayName = p.name || "落釘位置";
   var enc = encodeURIComponent(displayName);
   var links = $("links"); links.innerHTML = "";
