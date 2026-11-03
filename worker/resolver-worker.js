@@ -94,22 +94,32 @@ export default {
         return errorPage("開唔到條連結：" + e.message);
       }
       const finalUrl = res.url || u;
-      name = name || extractName(finalUrl);
-      found = extractFromText(finalUrl);
+      // Google often 429-blocks datacenter fetchers and lands on a /sorry/ page;
+      // the intended maps URL survives inside its "continue" parameter — recover it.
+      let targetUrl = finalUrl;
+      if (finalUrl.includes("/sorry/")) {
+        try {
+          const cont = new URL(finalUrl).searchParams.get("continue");
+          if (cont) targetUrl = cont;
+        } catch (e) { /* keep finalUrl */ }
+      }
+      name = name || extractName(targetUrl);
+      found = extractFromText(targetUrl);
       let html = "";
-      if (!found) {
+      if (!found && targetUrl === finalUrl) {
         html = await res.text();
         found = extractFromText(html);
       }
       if (debug) {
         dbg.fetchStatus = res.status;
         dbg.finalUrl = finalUrl;
-        dbg.urlFound = extractFromText(finalUrl);
+        dbg.targetUrl = targetUrl;
+        dbg.urlFound = extractFromText(targetUrl);
         dbg.htmlLen = html.length;
         dbg.htmlFound = found;
-        const ftid = new URL(finalUrl).searchParams.get("ftid") || "";
+        const ftid = new URL(targetUrl).searchParams.get("ftid") || "";
         dbg.ftid = ftid;
-        dbg.qParam = new URL(finalUrl).searchParams.get("q");
+        dbg.qParam = new URL(targetUrl).searchParams.get("q");
         if (html) {
           const needle = ftid.split(":")[1] || "Moray";
           const idx = html.indexOf(needle);
@@ -125,7 +135,7 @@ export default {
       if (!found) {
         // iOS App 分享連結常見形式：最終網址只有 ?q=<名稱+地址>&ftid=<地點ID>，成條網址冇座標。
         // 最後手段：用 q 入面嘅地址做地理編碼（OSM Nominatim，免 Key），攞返 WGS-84 座標。
-        const q = new URL(finalUrl).searchParams.get("q");
+        const q = new URL(targetUrl).searchParams.get("q");
         if (q) {
           // Try several query variants: full q, q without trailing CJK country word, address-only (drop place name)
           const cleaned = q.replace(/(澳洲|澳大利亚|澳大利亞|紐西蘭|新西蘭)\s*$/u, "").trim();
