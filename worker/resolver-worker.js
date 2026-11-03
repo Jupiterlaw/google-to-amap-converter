@@ -98,7 +98,24 @@ export default {
         const html = await res.text();
         found = extractFromText(html);
       }
-      if (!found) return errorPage("條連結展開之後都搵唔到座標（可能係純地點 ID 連結）。");
+      if (!found) {
+        // iOS App 分享連結常見形式：最終網址只有 ?q=<名稱+地址>&ftid=<地點ID>，成條網址冇座標。
+        // 最後手段：用 q 入面嘅地址做地理編碼（OSM Nominatim，免 Key），攞返 WGS-84 座標。
+        const q = new URL(finalUrl).searchParams.get("q");
+        if (q) {
+          try {
+            const geo = await fetch(
+              "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q),
+              { headers: { "User-Agent": "google-to-amap-converter (personal tool)" } });
+            const arr = await geo.json();
+            if (arr && arr.length) {
+              found = { lat: +arr[0].lat, lon: +arr[0].lon, how: "address geocode (fallback)" };
+              if (!name) name = q.split(",")[0];
+            }
+          } catch (e) { /* fall through to error page */ }
+        }
+      }
+      if (!found) return errorPage("條連結展開之後都搵唔到座標，地址地理編碼亦失敗。");
     }
 
     const gcj = wgs84ToGcj02(found.lon, found.lat);
